@@ -4,20 +4,27 @@ from aiogram import types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.builtin import CommandStart
 from keyboards.default.phone_button import phone_btn_ru, phone_btn_uz, lang_btn
-from keyboards.inline.sms_inline_button import sms_inline_btn_uz, sms_inline_btn_ru
 from loader import dp
 from data.config import API_URL
 from states.register import RegisterState
+# from keyboards.default.shop_keyboards import uzb_shop_btn, rus_shop_btn
+from keyboards.default.shop_keyboards import get_shop_keyboard
+# import ssl
+#
+# ssl_context = ssl.create_default_context()
+# ssl_context.check_hostname = False
+# ssl_context.verify_mode = ssl.CERT_NONE
 
 
 @dp.message_handler(CommandStart())
 async def bot_start(message: types.Message, state: FSMContext):
-    # ✅ START ARGUMENT (shop_xxx) orqali do‘kon kodini olish
     args = message.get_args()
     if args.startswith("shop_"):
         shop_code = args.replace("shop_", "")
         async with aiohttp.ClientSession() as session:
             async with session.get(f"{API_URL}/shop/by-code/{shop_code}/") as shop_resp:
+                if shop_resp.status == 400:
+                    await message.answer("❌ Do'kon botda aktiv emas")
                 if shop_resp.status == 200:
                     await session.post(f"{API_URL}/botuser/set-active-shop/", json={
                         "telegram_id": str(message.from_user.id),
@@ -26,18 +33,32 @@ async def bot_start(message: types.Message, state: FSMContext):
     async with aiohttp.ClientSession() as session:
         async with session.get(f"{API_URL}/botuser/{message.from_user.id}/") as resp:
             if resp.status == 200:
-                user_data = await resp.json()
-                language = user_data.get("language", "uz")
-                welcome_text = (
-                    f"👋 Salom, {message.from_user.full_name}!\n\n"
-                    if language == "uz" else
-                    f"👋 Привет, {message.from_user.full_name}!\n\n"
-                )
-                await message.answer(welcome_text, parse_mode="Markdown")
-                await state.finish()
+                try:
+                    user_data = await resp.json()
+                    language = user_data.get("language", "uz")
+                    # Do‘kon nomini olish (agar mavjud bo‘lsa)
+                    shop_name = None
+                    if user_data.get("active_shop"):
+                        # active_shop obyekt yoki string bo'lishi mumkin, tekshiramiz:
+                        if isinstance(user_data["active_shop"], dict):
+                            shop_name = user_data["active_shop"].get("shop_name")
+                        elif isinstance(user_data["active_shop"], str):
+                            # faqat kod bo‘lishi mumkin, nom yo‘q
+                            shop_name = user_data["active_shop"]
+                        # Tugma yasash
+                        keyboard = get_shop_keyboard(shop_name=shop_name, lang=language)
+                    if language == "ru":
+                        await message.answer(f"👋 Привет, {message.from_user.full_name}!\n\n", reply_markup=keyboard)
+                    elif language == "uz":
+                        await message.answer(f"👋 Salom, {message.from_user.full_name}!\n\n", reply_markup=keyboard)
+                    await state.finish()
+                except aiohttp.ContentTypeError:
+                    await message.answer("⚠️ Xatolik yuz berdi: noto'g'ri formatdagi javob (JSON emas).")
+                    await state.finish()
             else:
-                await message.answer("🌐 Iltimos, o'zingizga qulay tilni tanlang.\n\n🇺🇿 O'zbekcha yoki 🇷🇺 Русский",
-                                     reply_markup=lang_btn)
+                await message.answer(
+                    "🌟 Xush kelibsiz! | Добро пожаловать!\n\n🇺🇿 O‘zbekcha  |  🇷🇺 Русский",
+                    reply_markup=lang_btn)
                 await RegisterState.waiting_for_language.set()
 
 
@@ -47,16 +68,15 @@ async def choose_language(message: types.Message, state: FSMContext):
     lang = message.text
     if lang == "🇺🇿 O'zbekcha":
         await state.update_data(language="uz")
-        await message.answer("📞 Telefon raqamingizni yuboring.\n\n👇 Tugmani bosing va raqamingizni ulashing:",
+        await message.answer("📱 Telefon raqamingizni yuboring:",
                              reply_markup=phone_btn_uz)
     elif lang == "🇷🇺 Русский":
         await state.update_data(language="ru")
         await message.answer(
-            "📞 Пожалуйста, отправьте ваш номер телефона.\n\n👇 Нажмите на кнопку и поделитесь номером:",
+            "📱 Пожалуйста, отправьте ваш номер телефона:",
             reply_markup=phone_btn_ru)
     else:
         return
-    await message.delete()
     await RegisterState.waiting_for_phone.set()
 
 
@@ -64,65 +84,22 @@ async def choose_language(message: types.Message, state: FSMContext):
 @dp.message_handler(content_types=[types.ContentType.CONTACT, types.ContentType.TEXT],
                     state=RegisterState.waiting_for_phone)
 async def get_phone(message: types.Message, state: FSMContext):
+    user = message.from_user
     user_data = await state.get_data()
     language = user_data.get("language", "uz")  # Tilni olish
-
-    # Telefon raqamni aniqlash
     if message.contact and message.contact.user_id == message.from_user.id:
         phone_number = message.contact.phone_number
     elif message.text and re.fullmatch(r'^\+998\d{9}$', message.text.strip()):
         phone_number = message.text.strip()
     else:
+
         await message.answer(
             "📵 Iltimos, +998 bilan boshlanadigan telefon raqamingizni yozing yoki tugmadan foydalaning." if language == "uz" else
             "📵 Пожалуйста, введите номер, начинающийся с +998, или нажмите на кнопку ниже."
         )
         return
-
-    # Backendga yuborish
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-                f"{API_URL}/botuser/register/",
-                json={"phone_number": phone_number, "telegram_id": message.from_user.id}
-        ) as resp:
-            if resp.status == 201:
-                await state.update_data(phone_number=phone_number)  # Telefon raqamini saqlash
-                await message.answer(
-                    "✅ Telefon raqamingiz qabul qilindi." if language == "uz" else "✅ Ваш номер принят.",
-                    reply_markup=types.ReplyKeyboardRemove()
-                )
-                confirm_text = (
-                    "📩 4 xonali tasdiqlash kodi olish uchun quyidagi \n<b>📲Kod olish</b> tugmasini bosing." if language == "uz"
-                    else "📩 Чтобы получить 4-значный код, нажмите кнопку \n<b>📲Получить код</b> ниже."
-                )
-                await message.answer(confirm_text,
-                                     reply_markup=sms_inline_btn_uz if language == "uz" else sms_inline_btn_ru)
-                await RegisterState.waiting_for_code.set()
-            else:
-                await message.answer(
-                    "❌ Telefon raqamini qabul qilib bo‘lmadi. Iltimos, qaytadan urinib ko‘ring." if language == "uz" else
-                    "❌ Не удалось получить номер. Попробуйте снова."
-                )
-
-
-@dp.message_handler(lambda msg: msg.text.isdigit() and len(msg.text) == 4, state=RegisterState.waiting_for_code)
-async def verify_code(message: types.Message, state: FSMContext):
-    code = message.text
-    user = message.from_user
-    user_data = await state.get_data()
-    phone_number = user_data.get("phone_number")
-    language = user_data.get("language", "uz")
-
-    if not phone_number:
-        await message.answer(
-            "⚠️ Iltimos, avval telefon raqamingizni yuboring." if language == "uz" else
-            "⚠️ Пожалуйста, сначала отправьте номер телефона."
-        )
-        return
-
     payload = {
         "phone_number": phone_number,
-        "code": code,
         "telegram_id": user.id,
         "first_name": user.first_name,
         "last_name": user.last_name,
@@ -130,22 +107,32 @@ async def verify_code(message: types.Message, state: FSMContext):
         "language": language,
     }
 
+    # Backendga yuborish
     async with aiohttp.ClientSession() as session:
-        async with session.post(f"{API_URL}/botuser/verify_code/", json=payload) as resp:
-            data = await resp.json()
-            if resp.status == 200:
-                await message.answer(
-                    "🎉 Tabriklaymiz! Siz muvaffaqiyatli ro‘yxatdan o‘tdingiz!" if language == "uz" else
-                    "🎉 Поздравляем! Вы успешно зарегистрированы!"
-                )
+        async with session.post(
+                f"{API_URL}/botuser/register/",
+                json=payload
+        ) as resp:
+            # Do‘kon nomini olish (agar mavjud bo‘lsa)
+            shop_name = None
+            if user_data.get("active_shop"):
+                # active_shop obyekt yoki string bo'lishi mumkin, tekshiramiz:
+                if isinstance(user_data["active_shop"], dict):
+                    shop_name = user_data["active_shop"].get("shop_name")
+                elif isinstance(user_data["active_shop"], str):
+                    # faqat kod bo‘lishi mumkin, nom yo‘q
+                    shop_name = user_data["active_shop"]
+                # Tugma yasash
+                keyboard = get_shop_keyboard(shop_name=shop_name, lang=language)
+            if resp.status == 201:
+                await state.update_data(phone_number=phone_number)  # Telefon raqamini saqlash
+                if language == "ru":
+                    await message.answer("✅ Ваш номер принят.", reply_markup=keyboard)
+                elif language == "uz":
+                    await message.answer("✅ Telefon raqamingiz qabul qilindi.", reply_markup=keyboard)
                 await state.finish()
-            elif resp.status == 400 and "expired" in data.get("detail", "").lower():
-                await message.answer(
-                    "⏳ Kod eskirgan. Yangi kod yuborildi, uni kiriting." if language == "uz" else
-                    "⏳ Срок действия кода истек. Новый код отправлен, введите его."
-                )
             else:
                 await message.answer(
-                    "❌ Kod noto‘g‘ri. Iltimos, qayta urinib ko‘ring." if language == "uz" else
-                    "❌ Неверный код. Пожалуйста, попробуйте снова."
+                    "❌ Telefon raqamini qabul qilib bo‘lmadi. Iltimos, qaytadan urinib ko‘ring." if language == "uz" else
+                    "❌ Не удалось получить номер. Попробуйте снова."
                 )

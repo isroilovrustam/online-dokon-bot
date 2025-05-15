@@ -1,5 +1,6 @@
 from aiogram import types
 from loader import dp
+from datetime import datetime
 import aiohttp
 from data.config import API_URL
 
@@ -16,28 +17,29 @@ async def show_user_shops(message: types.Message):
         async with session.get(f"{API_URL}/shop/list/", params=params) as resp:
             if resp.status == 200:
                 shops = await resp.json()
-
+                # print(shops)
                 if not shops:
                     await message.answer("Sizda hali hech qanday do‘kon mavjud emas.")
                     return
-
-                # Aktiv do‘konlarni ajratib olish
-                active_shops = [shop for shop in shops if shop.get("is_active")]
-
-                if len(active_shops) == 1:
-                    shop = active_shops[0]
-                    await message.answer(
-                        f"🟢 Aktiv do‘kon:\n\n"
-                        f"📛 Nomi: {shop['shop_name']}\n"
-                        f"📅 Tugash muddati: {shop['subscription_end']}"
-                    )
                 else:
-                    text = "🛍 Sizning do‘konlaringiz:\n\n"
-                    for i, shop in enumerate(shops, 1):
-                        text += (
-                            f"{i}) {shop['shop_name']}\n"
-                            f"   ⏳ Tugash: {shop['subscription_end']}\n\n"
-                        )
-                    await message.answer(text)
+                    text_true = ''
+                    text_false = ''
+
+                    for shop in shops:
+                        sub_end = datetime.fromisoformat(shop['subscription_end'])
+
+                        formatted_date = sub_end.strftime('%d.%m.%Y %H:%M')
+
+                        if shop['is_active'] == True:
+                            text_true += (
+                                f"{shop['shop_name']}\n"
+                                f"⏳ Tugash: {formatted_date}\n\n"
+                            )
+                        else:
+                            text_false += (
+                                f"{shop['shop_name']}\n"
+                                f"⚠️ Online Do'kon vaqtincha ishlamayabdi\n\n"
+                            )
+                    await message.answer(text_true + text_false)
             else:
                 await message.answer("❌ Do‘konlar ro‘yxatini olishda xatolik yuz berdi.")
