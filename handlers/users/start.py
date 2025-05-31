@@ -1,3 +1,4 @@
+import json
 import re
 import aiohttp
 from aiogram import types
@@ -7,46 +8,62 @@ from keyboards.default.phone_button import phone_btn_ru, phone_btn_uz, lang_btn
 from loader import dp
 from data.config import API_URL
 from states.register import RegisterState
-# from keyboards.default.shop_keyboards import uzb_shop_btn, rus_shop_btn
 from keyboards.default.shop_keyboards import get_shop_keyboard
-# import ssl
-#
-# ssl_context = ssl.create_default_context()
-# ssl_context.check_hostname = False
-# ssl_context.verify_mode = ssl.CERT_NONE
+
+import ssl
+
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE
 
 
-@dp.message_handler(CommandStart())
+@dp.message_handler(commands="start")
 async def bot_start(message: types.Message, state: FSMContext):
     args = message.get_args()
     if args.startswith("shop_"):
         shop_code = args.replace("shop_", "")
         async with aiohttp.ClientSession() as session:
-            async with session.get(f"{API_URL}/shop/by-code/{shop_code}/") as shop_resp:
+            async with session.get(f"{API_URL}/shop/by-code/{shop_code}/",
+                                   ssl=ssl_context) as shop_resp:  # ssl=ssl_context,
+                # print(shop_resp.json())
                 if shop_resp.status == 400:
-                    await message.answer("❌ Do'kon botda aktiv emas")
-                if shop_resp.status == 200:
-                    await session.post(f"{API_URL}/botuser/set-active-shop/", json={
+                    await message.answer("❌ Bu do‘kon botda aktiv emas.")
+                    return
+
+                elif shop_resp.status == 200:
+                    # Foydalanuvchining aktiv do‘koni sifatida saqlab qo‘yamiz
+                    await session.post(f"{API_URL}/botuser/set-active-shop/", ssl=ssl_context, json={
                         "telegram_id": str(message.from_user.id),
                         "shop_code": shop_code
                     })
+
     async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_URL}/botuser/{message.from_user.id}/") as resp:
+        async with session.get(f"{API_URL}/botuser/{message.from_user.id}/", ssl=ssl_context) as resp:
             if resp.status == 200:
                 try:
                     user_data = await resp.json()
                     language = user_data.get("language", "uz")
-                    # Do‘kon nomini olish (agar mavjud bo‘lsa)
                     shop_name = None
-                    if user_data.get("active_shop"):
-                        # active_shop obyekt yoki string bo'lishi mumkin, tekshiramiz:
-                        if isinstance(user_data["active_shop"], dict):
-                            shop_name = user_data["active_shop"].get("shop_name")
-                        elif isinstance(user_data["active_shop"], str):
-                            # faqat kod bo‘lishi mumkin, nom yo‘q
-                            shop_name = user_data["active_shop"]
-                        # Tugma yasash
-                        keyboard = get_shop_keyboard(shop_name=shop_name, lang=language)
+                    shop_code = None
+                    active_shop = user_data.get("active_shop")
+                    telegram_id = message.from_user.id
+
+                    if active_shop:
+                        is_active = active_shop.get("is_active")
+
+                        # print(is_active)
+                        if is_active:
+                            shop_name = active_shop.get("shop_name")
+                            shop_code = active_shop.get("shop_code")
+                            keyboard = get_shop_keyboard(shop_name=shop_name, shop_code=shop_code,
+                                                         telegram_id=telegram_id, lang=language)
+                        else:
+                            keyboard = get_shop_keyboard(shop_name=shop_name, shop_code=shop_code,
+                                                         telegram_id=telegram_id, lang=language)
+                    else:
+                        keyboard = get_shop_keyboard(shop_name=shop_name,
+                                                     shop_code=shop_code, telegram_id=telegram_id,
+                                                     lang=language)
                     if language == "ru":
                         await message.answer(f"👋 Привет, {message.from_user.full_name}!\n\n", reply_markup=keyboard)
                     elif language == "uz":
@@ -106,33 +123,68 @@ async def get_phone(message: types.Message, state: FSMContext):
         "telegram_username": user.username,
         "language": language,
     }
+    print(payload)
 
     # Backendga yuborish
     async with aiohttp.ClientSession() as session:
         async with session.post(
-                f"{API_URL}/botuser/register/",
+                f"{API_URL}/botuser/register/", ssl=ssl_context,
                 json=payload
         ) as resp:
-            # Do‘kon nomini olish (agar mavjud bo‘lsa)
-            shop_name = None
-            if user_data.get("active_shop"):
-                # active_shop obyekt yoki string bo'lishi mumkin, tekshiramiz:
-                if isinstance(user_data["active_shop"], dict):
-                    shop_name = user_data["active_shop"].get("shop_name")
-                elif isinstance(user_data["active_shop"], str):
-                    # faqat kod bo‘lishi mumkin, nom yo‘q
-                    shop_name = user_data["active_shop"]
-                # Tugma yasash
-                keyboard = get_shop_keyboard(shop_name=shop_name, lang=language)
-            if resp.status == 201:
-                await state.update_data(phone_number=phone_number)  # Telefon raqamini saqlash
-                if language == "ru":
-                    await message.answer("✅ Ваш номер принят.", reply_markup=keyboard)
-                elif language == "uz":
-                    await message.answer("✅ Telefon raqamingiz qabul qilindi.", reply_markup=keyboard)
+            print(resp.status)
+            if resp.status != 201:
+                error_text = await resp.text()
+                # await message.answer(
+                #     f"❌ Ro'yxatdan o'tishda xatolik yuz berdi: {resp.status}\n{error_text[:200]}"
+                # )
                 await state.finish()
-            else:
+                return
+
+        # Ro'yxatdan o'tgandan so'ng foydalanuvchi ma'lumotlarini olish
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{API_URL}/botuser/{user.id}/", ssl=ssl_context) as resp:
+            if resp.status != 200:
                 await message.answer(
-                    "❌ Telefon raqamini qabul qilib bo‘lmadi. Iltimos, qaytadan urinib ko‘ring." if language == "uz" else
-                    "❌ Не удалось получить номер. Попробуйте снова."
+                    "❌ Serverdan ma'lumot olishda xatolik yuz berdi." if language == "uz" else
+                    "❌ Ошибка при получении данных с сервера."
                 )
+                await state.finish()
+                return
+
+            try:
+                user_data = await resp.json()
+            except json.decoder.JSONDecodeError as e:
+                await message.answer(
+                    "❌ Serverdan noto‘g‘ri ma'lumot keldi." if language == "uz" else
+                    "❌ Сервер отправил неверные данные."
+                )
+                print(f"JSON decode error: {e}")
+                await state.finish()
+                return
+
+        # Shop ma'lumotlarini ajratib olish
+    telegram_id = user.id
+    language = user_data.get("language", "uz")
+    active_shop = user_data.get("active_shop")
+    shop_name = shop_code = phone_number = None
+
+    if active_shop and active_shop.get("is_active"):
+        shop_name = active_shop.get("shop_name")
+        shop_code = active_shop.get("shop_code")
+
+    # Klaviatura generatsiyasi
+    keyboard = get_shop_keyboard(
+        shop_name=shop_name,
+        shop_code=shop_code,
+        telegram_id=telegram_id,
+        lang=language
+    )
+
+    # Xabar yuborish
+    if language == "ru":
+        await message.answer("✅ Ваш номер принят.", reply_markup=keyboard)
+    else:
+        await message.answer("✅ Telefon raqamingiz qabul qilindi.", reply_markup=keyboard)
+
+    # Holatni tugatish
+    await state.finish()
