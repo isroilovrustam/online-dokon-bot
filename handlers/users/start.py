@@ -20,8 +20,8 @@ ssl_context.verify_mode = ssl.CERT_NONE
 @dp.message_handler(commands="start")
 async def bot_start(message: types.Message, state: FSMContext):
     args = message.get_args()
+    shop_code = args.replace("shop_", "")
     if args.startswith("shop_"):
-        shop_code = args.replace("shop_", "")
         async with aiohttp.ClientSession() as session:
             async with session.get(f"{API_URL}/shop/by-code/{shop_code}/",
                                    ssl=ssl_context) as shop_resp:  # ssl=ssl_context,
@@ -36,6 +36,7 @@ async def bot_start(message: types.Message, state: FSMContext):
                         "telegram_id": str(message.from_user.id),
                         "shop_code": shop_code
                     })
+                    # return
 
     async with aiohttp.ClientSession() as session:
         async with session.get(f"{API_URL}/botuser/{message.from_user.id}/", ssl=ssl_context) as resp:
@@ -43,9 +44,11 @@ async def bot_start(message: types.Message, state: FSMContext):
                 try:
                     user_data = await resp.json()
                     language = user_data.get("language", "uz")
-                    shop_name = None
+                    shop_name_uz = None
+                    shop_name_ru = None
                     shop_code = None
                     active_shop = user_data.get("active_shop")
+                    # print(active_shop)
                     telegram_id = message.from_user.id
 
                     if active_shop:
@@ -53,15 +56,18 @@ async def bot_start(message: types.Message, state: FSMContext):
 
                         # print(is_active)
                         if is_active:
-                            shop_name = active_shop.get("shop_name")
+                            shop_name_uz = active_shop.get("shop_name_uz")
+                            shop_name_ru = active_shop.get("shop_name_ru")
                             shop_code = active_shop.get("shop_code")
-                            keyboard = get_shop_keyboard(shop_name=shop_name, shop_code=shop_code,
+                            keyboard = get_shop_keyboard(shop_name_uz=shop_name_uz, shop_name_ru=shop_name_ru,
+                                                         shop_code=shop_code,
                                                          telegram_id=telegram_id, lang=language)
                         else:
-                            keyboard = get_shop_keyboard(shop_name=shop_name, shop_code=shop_code,
+                            keyboard = get_shop_keyboard(shop_name_uz=shop_name_uz, shop_name_ru=shop_name_ru,
+                                                         shop_code=shop_code,
                                                          telegram_id=telegram_id, lang=language)
                     else:
-                        keyboard = get_shop_keyboard(shop_name=shop_name,
+                        keyboard = get_shop_keyboard(shop_name_uz=shop_name_uz, shop_name_ru=shop_name_ru,
                                                      shop_code=shop_code, telegram_id=telegram_id,
                                                      lang=language)
                     if language == "ru":
@@ -73,6 +79,7 @@ async def bot_start(message: types.Message, state: FSMContext):
                     await message.answer("⚠️ Xatolik yuz berdi: noto'g'ri formatdagi javob (JSON emas).")
                     await state.finish()
             else:
+                await state.update_data(waiting_for_shop_code=shop_code)
                 await message.answer(
                     "🌟 Xush kelibsiz! | Добро пожаловать!\n\n🇺🇿 O‘zbekcha  |  🇷🇺 Русский",
                     reply_markup=lang_btn)
@@ -104,6 +111,7 @@ async def get_phone(message: types.Message, state: FSMContext):
     user = message.from_user
     user_data = await state.get_data()
     language = user_data.get("language", "uz")  # Tilni olish
+    shop_code = user_data.get("waiting_for_shop_code")
     if message.contact and message.contact.user_id == message.from_user.id:
         phone_number = message.contact.phone_number
     elif message.text and re.fullmatch(r'^\+998\d{9}$', message.text.strip()):
@@ -122,16 +130,15 @@ async def get_phone(message: types.Message, state: FSMContext):
         "last_name": user.last_name,
         "telegram_username": user.username,
         "language": language,
+        "active_shop": shop_code,
     }
-    print(payload)
-
     # Backendga yuborish
     async with aiohttp.ClientSession() as session:
         async with session.post(
                 f"{API_URL}/botuser/register/", ssl=ssl_context,
                 json=payload
         ) as resp:
-            print(resp.status)
+            # print(resp.status)
             if resp.status != 201:
                 error_text = await resp.text()
                 # await message.answer(
@@ -158,7 +165,7 @@ async def get_phone(message: types.Message, state: FSMContext):
                     "❌ Serverdan noto‘g‘ri ma'lumot keldi." if language == "uz" else
                     "❌ Сервер отправил неверные данные."
                 )
-                print(f"JSON decode error: {e}")
+                # print(f"JSON decode error: {e}")
                 await state.finish()
                 return
 
@@ -166,15 +173,17 @@ async def get_phone(message: types.Message, state: FSMContext):
     telegram_id = user.id
     language = user_data.get("language", "uz")
     active_shop = user_data.get("active_shop")
-    shop_name = shop_code = phone_number = None
+    shop_name_uz = shop_name_ru = shop_code = phone_number = None
 
     if active_shop and active_shop.get("is_active"):
-        shop_name = active_shop.get("shop_name")
+        shop_name_uz = active_shop.get("shop_name_uz")
+        shop_name_ru = active_shop.get("shop_name_ru")
         shop_code = active_shop.get("shop_code")
 
     # Klaviatura generatsiyasi
     keyboard = get_shop_keyboard(
-        shop_name=shop_name,
+        shop_name_uz=shop_name_uz,
+        shop_name_ru=shop_name_ru,
         shop_code=shop_code,
         telegram_id=telegram_id,
         lang=language

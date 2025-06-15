@@ -6,7 +6,8 @@ from aiogram.types import ReplyKeyboardRemove
 from data.config import API_URL
 from loader import dp
 from aiogram import types
-from keyboards.default.shop_keyboards import get_shop_keyboard, sozlama_lang_btn, get_shop_keyboard_sozlamalar
+from keyboards.default.shop_keyboards import get_shop_keyboard, sozlama_lang_btn, shop_keyboard_sozlamalar_ru, \
+    shop_keyboard_sozlamalar_uz
 
 import ssl
 
@@ -14,22 +15,14 @@ ssl_context = ssl.create_default_context()
 ssl_context.check_hostname = False
 ssl_context.verify_mode = ssl.CERT_NONE
 
+
 @dp.message_handler(text=["⚙️ Sozlamalar", "⚙️ Настройки"])
 async def get_sozlamalar(message: types.Message):
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_URL}/botuser/{message.from_user.id}/", ssl=ssl_context) as resp:
-            if resp.status == 200:
-                try:
-                    user_data = await resp.json()
-                    language = user_data.get("language", "uz")
-                    telegram_id = message.from_user.id
-                    keyboard = get_shop_keyboard_sozlamalar(telegram_id=telegram_id, lang=language)
-                    if message.text == "⚙️ Sozlamalar":
-                        await message.answer("Quydagilardan birini tanlang: ", reply_markup=keyboard)
-                    elif message.text == "⚙️ Настройки":
-                        await message.answer("Пожалуйста, выберите один из следующих пунктов:", reply_markup=keyboard)
-                except aiohttp.ContentTypeError:
-                    pass
+    if message.text == "⚙️ Sozlamalar":
+        await message.answer("Quydagilardan birini tanlang: ", reply_markup=shop_keyboard_sozlamalar_uz)
+    elif message.text == "⚙️ Настройки":
+        await message.answer("Пожалуйста, выберите один из следующих пунктов:",
+                             reply_markup=shop_keyboard_sozlamalar_ru)
 
 
 @dp.message_handler(text=["🌐 Tilni o'zgartirish", "🌐 Изменить язык"])
@@ -50,7 +43,8 @@ async def change_language(message: types.Message):
     # Tilni yangilash
     async with aiohttp.ClientSession() as session:
         payload = {'language': new_language}
-        async with session.patch(f"{API_URL}/botuser/{message.from_user.id}/", ssl=ssl_context, json=payload) as response:
+        async with session.patch(f"{API_URL}/botuser/{message.from_user.id}/", ssl=ssl_context,
+                                 json=payload) as response:
             if response.status != 200:
                 await message.answer(
                     "Tilni o'zgartirishda xatolik yuz berdi ❌" if new_language == "uz" else "Ошибка при изменении языка ❌")
@@ -60,21 +54,21 @@ async def change_language(message: types.Message):
             if resp.status == 200:
                 try:
                     user_data = await resp.json()
-                    # print(user_data)
                     language = user_data.get("language", "uz")
                     active_shop = user_data.get("active_shop")
-                    # print(active_shop)
 
                     shop_name = None
                     shop_code = None
 
                     if active_shop and active_shop.get("is_active"):
-                        shop_name = active_shop.get("shop_name")
+                        shop_name_uz = active_shop.get("shop_name_uz")
+                        shop_name_ru = active_shop.get("shop_name_ru")
                         shop_code = active_shop.get("shop_code")
                         telegram_id = user_id
 
                     keyboard = get_shop_keyboard(
-                        shop_name=shop_name,
+                        shop_name_uz=shop_name_uz,
+                        shop_name_ru=shop_name_ru,
                         shop_code=shop_code,
                         telegram_id=telegram_id,
                         lang=language
@@ -90,6 +84,7 @@ async def change_language(message: types.Message):
     )
     await message.answer(text, reply_markup=keyboard)
 
+
 @dp.message_handler(text=["🔙 Orqaga", "🔙 Назад"])
 async def back_go(message: types.Message):
     telegram_id = message.from_user.id  # Always identified beforehand
@@ -102,15 +97,18 @@ async def back_go(message: types.Message):
                     language = user_data.get("language", "uz")
                     active_shop = user_data.get("active_shop")
 
-                    shop_name = None
+                    shop_name_uz = None
+                    shop_name_ru = None
                     shop_code = None
 
                     if active_shop and active_shop.get("is_active"):
-                        shop_name = active_shop.get("shop_name")
+                        shop_name_uz = active_shop.get("shop_name_uz")
+                        shop_name_ru = active_shop.get("shop_name_ru")
                         shop_code = active_shop.get("shop_code")
 
                     keyboard = get_shop_keyboard(
-                        shop_name=shop_name,
+                        shop_name_uz=shop_name_uz,
+                        shop_name_ru=shop_name_ru,
                         shop_code=shop_code,
                         telegram_id=telegram_id,
                         lang=language
