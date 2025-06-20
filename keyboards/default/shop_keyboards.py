@@ -17,11 +17,8 @@ def get_shop_keyboard(shop_name_uz, shop_name_ru, shop_code, telegram_id, lang="
     )
     if shop_code:
         web_url = f"{base_url}/?telegram_id={telegram_id}&shop_code={shop_code}"
-        # print(telegram_id, shop_code)
     else:
-        web_url = f"{base_url}/shop/?telegram_id={telegram_id}"
-    # web_url = f"{base_url}"
-    # print(web_url)
+        web_url = f"{base_url}/shop/?telegram_id={telegram_id}&shop_code={shop_code}"
 
     if lang == "ru":
         keyboard = ReplyKeyboardMarkup(
@@ -29,9 +26,11 @@ def get_shop_keyboard(shop_name_uz, shop_name_ru, shop_code, telegram_id, lang="
                 [KeyboardButton(shop_display, web_app=WebAppInfo(url=web_url))],
                 [
                     KeyboardButton(text="🛒 Мои заказы",
-                                   web_app=WebAppInfo(url=f"{base_url}/orders/?telegram_id={telegram_id}")),
+                                   web_app=WebAppInfo(
+                                       url=f"{base_url}/orders/?telegram_id={telegram_id}&shop_code={shop_code}")),
                     KeyboardButton(text="️👤 Мой профиль",
-                                   web_app=WebAppInfo(url=f"{base_url}/edit_profile/?telegram_id={telegram_id}")),
+                                   web_app=WebAppInfo(
+                                       url=f"{base_url}/edit_profile/?telegram_id={telegram_id}&shop_code={shop_code}")),
                 ],
                 [KeyboardButton(text="⚙️ Настройки")]
             ],
@@ -43,9 +42,11 @@ def get_shop_keyboard(shop_name_uz, shop_name_ru, shop_code, telegram_id, lang="
                 [KeyboardButton(shop_display, web_app=WebAppInfo(url=web_url))],
                 [
                     KeyboardButton(text="🛒 Buyurtmalarim",
-                                   web_app=WebAppInfo(url=f"{base_url}/orders/?telegram_id={telegram_id}")),
+                                   web_app=WebAppInfo(
+                                       url=f"{base_url}/orders/?telegram_id={telegram_id}&shop_code={shop_code}")),
                     KeyboardButton(text="️👤 Profilim",
-                                   web_app=WebAppInfo(url=f"{base_url}/edit_profile/?telegram_id={telegram_id}"))
+                                   web_app=WebAppInfo(
+                                       url=f"{base_url}/edit_profile/?telegram_id={telegram_id}&shop_code={shop_code}"))
                 ],
                 [KeyboardButton(text="⚙️ Sozlamalar")]
             ],
@@ -101,9 +102,9 @@ sozlama_lang_btn = ReplyKeyboardMarkup(
 )
 
 
-def get_bot_keyboard_sozlamalar(telegram_id, lang="uz"):
+def get_bot_keyboard_sozlamalar(telegram_id, shop_code, lang="uz"):
     base_url = "https://market-front.abruis.uz"
-    web_url = f"{base_url}/shop/?telegram_id={telegram_id}"
+    web_url = f"{base_url}/shop/?telegram_id={telegram_id}&shop_code={shop_code}"
     # Tilga mos klaviatura
     if lang == "ru":
         keyboard = ReplyKeyboardMarkup(

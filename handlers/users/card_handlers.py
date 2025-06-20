@@ -20,8 +20,6 @@ async def get_order_data(order_id: int, telegram_id):
     async with aiohttp.ClientSession() as session:
         try:
             async with session.get(url, ssl=ssl_context) as response:
-                data = await response.json()
-                # print(response.status, data)
                 if response.status == 200:
                     return await response.json()
                 else:
@@ -42,13 +40,26 @@ async def handle_payment(call: types.CallbackQuery, state: FSMContext):
     # API dan ma'lumotni olib tilni olamiz
     order_data = await get_order_data(order_id, call.from_user.id)
     lang = order_data["user"].get("language", "uz") if order_data else "uz"
+    shop = order_data["user"]["active_shop"] if order_data else None
+
+    if not shop:
+        await call.message.answer("Do‘kon ma'lumotlari topilmadi.")
+        return
+
+    # Kartalar
+    uz_card = shop.get("uz_card")
+    uz_card_holder = shop.get("uz_card_holder")
+    humo_card = shop.get("humo_card")
+    humo_card_holder = shop.get("humo_card_holder")
+    visa_card = shop.get("visa_card")
+    visa_card_holder = shop.get("visa_card_holder")
 
     if lang == "ru":
         text = (
             "📌 <b>Выберите карту для оплаты:</b>\n\n"
-            "💳 <b>Uzcard:</b> <code>8600 1234 5678 9012</code>\n👤 Isroilov Rustamjon\n\n"
-            "💳 <b>Humo:</b> <code>8600 1234 5678 9012</code>\n👤 Isroilov Rustamjon\n\n"
-            "💳 <b>Visa:</b> <code>9860 3456 7890 1234</code>\n👤 Isroilov Rustamjon\n\n"
+            f"💳 <b>Uzcard:</b> <code>{uz_card}</code>\n👤 {uz_card_holder}\n\n"
+            f"💳 <b>Humo:</b> <code>{humo_card}</code>\n👤 {humo_card_holder}\n\n"
+            f"💳 <b>Visa:</b> <code>{visa_card}</code>\n👤 {visa_card_holder}\n\n"
             "💰 <b>Сумма оплаты:</b> <i>200 000 сум или 20$</i>\n\n"
             "📸 <b>После оплаты, пожалуйста, отправьте фото чека.</b>\n\n"
             "⚠️ <b>ВНИМАНИЕ!</b>\n"
@@ -58,9 +69,9 @@ async def handle_payment(call: types.CallbackQuery, state: FSMContext):
     else:
         text = (
             "📌 <b>To‘lov uchun quyidagi kartalardan birini tanlang:</b>\n\n"
-            "💳 <b>Uzcard:</b> <code>8600 1234 5678 9012</code>\n👤 Isroilov Rustamjon\n\n"
-            "💳 <b>Humo:</b> <code>8600 1234 5678 9012</code>\n👤 Isroilov Rustamjon\n\n"
-            "💳 <b>Visa:</b> <code>9860 3456 7890 1234</code>\n👤 Isroilov Rustamjon\n\n"
+            f"💳 <b>Uzcard:</b> <code>{uz_card}</code>\n👤 {uz_card_holder}\n\n"
+            f"💳 <b>Humo:</b> <code>{humo_card}</code>\n👤 {humo_card_holder}\n\n"
+            f"💳 <b>Visa:</b> <code>{visa_card}</code>\n👤 {visa_card_holder}\n\n"
             "💰 <b>To‘lov miqdori:</b> <i>200 000 so‘m yoki 20$</i>\n\n"
             "📸 <b>Iltimos, to‘lovni amalga oshirgach, chek (kvitansiya) suratini yuboring.</b>\n\n"
             "⚠️ <b>ESLATMA!</b>\n"
@@ -138,18 +149,17 @@ async def handle_photo_chek(message: types.Message, state: FSMContext):
     await message.answer(success_msg)
     await state.finish()
 
+@dp.message_handler(state=PaymentStates.waiting_for_chek, content_types=types.ContentType.TEXT)
+async def handle_invalid_chek_input(message: types.Message, state: FSMContext):
+    # FSM'dan order_id olish
+    state_data = await state.get_data()
+    order_id = state_data.get("order_id")
 
-@dp.message_handler(state=PaymentStates.waiting_for_chek)
-async def handle_invalid_chek_input(message: types.Message):
-    # oldindan order_id ni olish
-    state_data = await message.get_current()
-    state_data = await FSMContext.set_state(PaymentStates.waiting_for_chek)
-    order_id = (await message.bot.current_state(user=message.from_user.id).get_data()).get("order_id")
-
-    # order orqali til
+    # order orqali tilni aniqlash
     order_data = await get_order_data(order_id, message.from_user.id)
     lang = order_data["user"].get("language", "uz") if order_data else "uz"
 
+    # Xabar yuborish
     if lang == "ru":
         await message.answer(
             "❗ Пожалуйста, отправьте фотографию чека.\n\n"
