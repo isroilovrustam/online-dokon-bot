@@ -4,6 +4,8 @@ import aiohttp
 from aiogram import types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.builtin import CommandStart
+
+from filters import IsPrivate
 from keyboards.default.phone_button import phone_btn_ru, phone_btn_uz, lang_btn
 from loader import dp
 from data.config import API_URL
@@ -17,10 +19,9 @@ ssl_context.check_hostname = False
 ssl_context.verify_mode = ssl.CERT_NONE
 
 
-@dp.message_handler(commands="start")
+@dp.message_handler(IsPrivate(), commands="start")
 async def bot_start(message: types.Message, state: FSMContext):
     args = message.get_args()
-    shop_code = None
     # start=shop_abruis bo‘lsa, abruis ni ajratamiz
     if args.startswith("shop_"):
         shop_code = args.replace("shop_", "")
@@ -36,6 +37,7 @@ async def bot_start(message: types.Message, state: FSMContext):
                         "telegram_id": str(message.from_user.id),
                         "shop_code": shop_code
                     })
+    shop_code = "abruis_market"
 
     # Foydalanuvchi allaqachon ro‘yxatdan o‘tganmi — tekshiramiz
     async with aiohttp.ClientSession() as session:
