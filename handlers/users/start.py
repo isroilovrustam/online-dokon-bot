@@ -37,7 +37,8 @@ async def bot_start(message: types.Message, state: FSMContext):
                         "telegram_id": str(message.from_user.id),
                         "shop_code": shop_code
                     })
-    shop_code = "abruis_market"
+    else:
+        shop_code = "abruis_market"
 
     # Foydalanuvchi allaqachon ro‘yxatdan o‘tganmi — tekshiramiz
     async with aiohttp.ClientSession() as session:

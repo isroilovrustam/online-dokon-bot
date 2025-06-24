@@ -16,6 +16,36 @@ ssl_context.check_hostname = False
 ssl_context.verify_mode = ssl.CERT_NONE
 
 
+async def get_user_keyboard(telegram_id: int):
+    """
+    Telegram ID bo‘yicha foydalanuvchi tilini va faol do‘konini tekshirib,
+    tegishli klaviaturani qaytaradi.
+    """
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{API_URL}/botuser/{telegram_id}/", ssl=ssl_context) as resp:
+            if resp.status != 200:
+                return ReplyKeyboardRemove(), "uz"
+
+            try:
+                user_data = await resp.json()
+                language = user_data.get("language", "uz")
+                active_shop = user_data.get("active_shop", {})
+
+                if isinstance(active_shop, dict) and active_shop.get("is_active"):
+                    keyboard = get_shop_keyboard(
+                        shop_name_uz=active_shop.get("shop_name_uz"),
+                        shop_name_ru=active_shop.get("shop_name_ru"),
+                        shop_code=active_shop.get("shop_code"),
+                        telegram_id=telegram_id,
+                        lang=language
+                    )
+                    return keyboard, language
+            except Exception:
+                pass
+
+    return ReplyKeyboardRemove(), "uz"
+
+
 @dp.message_handler(text=["⚙️ Sozlamalar", "⚙️ Настройки"])
 async def get_sozlamalar(message: types.Message):
     if message.text == "⚙️ Sozlamalar":
@@ -33,49 +63,19 @@ async def get_tilni_ozgartirish(message: types.Message):
 @dp.message_handler(text=["O'zbekcha 🇺🇿", "Русский 🇷🇺"])
 async def change_language(message: types.Message):
     user_id = message.from_user.id
-    new_language = ''
-    # Tanlangan tilni aniqlash
-    if message.text == "O'zbekcha 🇺🇿":
-        new_language = 'uz'
-    elif message.text == "Русский 🇷🇺":
-        new_language = 'ru'
+    new_language = 'uz' if message.text == "O'zbekcha 🇺🇿" else 'ru'
 
-    # Tilni yangilash
     async with aiohttp.ClientSession() as session:
         payload = {'language': new_language}
-        async with session.patch(f"{API_URL}/botuser/{message.from_user.id}/", ssl=ssl_context,
-                                 json=payload) as response:
+        async with session.patch(f"{API_URL}/botuser/{user_id}/", ssl=ssl_context, json=payload) as response:
             if response.status != 200:
                 await message.answer(
-                    "Tilni o'zgartirishda xatolik yuz berdi ❌" if new_language == "uz" else "Ошибка при изменении языка ❌")
+                    "Tilni o'zgartirishda xatolik yuz berdi ❌" if new_language == "uz"
+                    else "Ошибка при изменении языка ❌"
+                )
                 return
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_URL}/botuser/{message.from_user.id}/", ssl=ssl_context) as resp:
-            if resp.status == 200:
-                try:
-                    user_data = await resp.json()
-                    language = user_data.get("language", "uz")
-                    active_shop = user_data.get("active_shop")
 
-                    shop_name = None
-                    shop_code = None
-
-                    if active_shop and active_shop.get("is_active"):
-                        shop_name_uz = active_shop.get("shop_name_uz")
-                        shop_name_ru = active_shop.get("shop_name_ru")
-                        shop_code = active_shop.get("shop_code")
-                        telegram_id = user_id
-
-                    keyboard = get_shop_keyboard(
-                        shop_name_uz=shop_name_uz,
-                        shop_name_ru=shop_name_ru,
-                        shop_code=shop_code,
-                        telegram_id=telegram_id,
-                        lang=language
-                    )
-
-                except json.decoder.JSONDecodeError:
-                    keyboard = ReplyKeyboardRemove()  # fallback or empty
+    keyboard, language = await get_user_keyboard(user_id)
 
     text = (
         "✅ Sizning tilingiz o'zgartirildi: O'zbekcha 🇺🇿"
@@ -87,38 +87,8 @@ async def change_language(message: types.Message):
 
 @dp.message_handler(text=["🔙 Orqaga", "🔙 Назад"])
 async def back_go(message: types.Message):
-    telegram_id = message.from_user.id  # Always identified beforehand
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_URL}/botuser/{telegram_id}/", ssl=ssl_context) as resp:
-            if resp.status == 200:
-                try:
-                    user_data = await resp.json()
-                    language = user_data.get("language", "uz")
-                    active_shop = user_data.get("active_shop")
-
-                    shop_name_uz = None
-                    shop_name_ru = None
-                    shop_code = None
-
-                    if active_shop and active_shop.get("is_active"):
-                        shop_name_uz = active_shop.get("shop_name_uz")
-                        shop_name_ru = active_shop.get("shop_name_ru")
-                        shop_code = active_shop.get("shop_code")
-
-                    keyboard = get_shop_keyboard(
-                        shop_name_uz=shop_name_uz,
-                        shop_name_ru=shop_name_ru,
-                        shop_code=shop_code,
-                        telegram_id=telegram_id,
-                        lang=language
-                    )
-
-                except json.decoder.JSONDecodeError:
-                    keyboard = ReplyKeyboardRemove()  # Fallback for JSON decode error
-
-            else:
-                keyboard = ReplyKeyboardRemove()  # Fallback for non-200 HTTP status
+    telegram_id = message.from_user.id
+    keyboard, language = await get_user_keyboard(telegram_id)
 
     text = "Asosiy sahifa" if message.text == "🔙 Orqaga" else "Главная страница"
     await message.answer(text, reply_markup=keyboard)
