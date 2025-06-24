@@ -199,16 +199,16 @@ async def back_go(message: types.Message):
     text_uz = """
 🛠 Botda biron muammo yuzaga kelsa, biz bilan bog‘laning:
 
-📞 Telefon: +998 90 059 96 26  
-📨 Telegram: @isroilov_rustam
+📞 Telefon: +998 94 050 12 02  
+📨 Telegram: @abdumalikovichuz
 
 ⏱ Qisqa vaqt ichida sizga javob beramiz!
     """
     text_ru = """
 🛠 Если у вас возникли проблемы с ботом, свяжитесь с нами:
 
-📞 Телефон: +998 90 059 96 26  
-📨 Телеграм: @isroilov_rustam
+📞 Телефон: +998 94 050 12 02  
+📨 Телеграм: @abdumalikovichuz
 
 ⏱ Мы ответим вам в кратчайшие сроки!
 
